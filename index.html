@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>かるたアプリ（対戦型）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      background: #f7f7fb;
+      margin: 0;
+      padding: 12px;
+      text-align: center;
+      touch-action: manipulation;
+    }
+
+    h1 { margin-bottom: 6px; font-size: 1.3rem; }
+
+    #score {
+      display: flex;
+      justify-content: space-around;
+      margin: 8px 0;
+      font-weight: bold;
+      font-size: 1rem;
+    }
+
+    #yomi {
+      font-size: 1.1rem;
+      margin: 10px 0;
+      padding: 10px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 10px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      font-size: 1.2rem;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .card:hover { background: #ffffff; }
+    .card:active { transform: scale(0.96); }
+
+    .card.player { background: #c7f9cc; cursor: default; }
+    .card.com { background: #ffd6d6; cursor: default; }
+
+    #status { margin-top: 8px; font-weight: bold; font-size: 0.95rem; }
+
+    button {
+      margin-top: 14px;
+      padding: 12px 28px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 999px;
+      background: #6366f1;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    @media (min-width: 600px) {
+      .cards {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      }
+      h1 { font-size: 1.5rem; }
+      #yomi { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <h1>かるた対戦（あなた vs COM）</h1>
+
+  <div id="score">
+    <div>あなた：<span id="playerScore">0</span></div>
+    <div>COM：<span id="comScore">0</span></div>
+  </div>
+
+  <div id="yomi">スタートを押してください</div>
+  <div class="cards" id="cards"></div>
+  <div id="status"></div>
+  <button onclick="startGame()">スタート</button>
+
+  <script>
+    var karuta = [
+      { tori: "HCl", yomi: [{text: "塩化水素", speak: "えんかすいそ"}]},
+      { tori: "CaClO･(H₂O)", yomi: [{text: "さらし粉", speak: "さらしこ"}]},
+      { tori: "Ca(ClO)₂･2H₂O", yomi: [{text: "高度さらし粉", speak: "こうどさらしこ"}]},
+      { tori: "HClO", yomi: [{text: "次亜塩素酸", speak: "じあえんそさん"}]},
+      { tori: "HClO₂", yomi: [{text: "亜塩素酸", speak: "あえんそさん"}]},
+      { tori: "HClO₃", yomi: [{text: "塩素酸", speak: "えんそさん"}]},
+      { tori: "HClO₄", yomi: [{text: "過塩素酸", speak: "かえんそさん"}]},
+      { tori: "NH₄Cl", yomi: [{text: "塩化アンモニウム", speak: "えんかあんもにうむ"}]},
+      { tori: "I₃⁻", yomi: [{text: "三ヨウ化物イオン", speak: "さんようかぶついおん"}]},
+    ];
+
+    let remaining = [];
+    let current = null;
+    let currentYomi = "";
+    let playerScore = 0;
+    let comScore = 0;
+    let comTimer = null;
+
+    const yomiEl = document.getElementById("yomi");
+    const cardsEl = document.getElementById("cards");
+    const statusEl = document.getElementById("status");
+    const playerScoreEl = document.getElementById("playerScore");
+    const comScoreEl = document.getElementById("comScore");
+
+    function speak(text) {
+      if (!('speechSynthesis' in window)) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ja-JP";
+      utter.rate = 1.2;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utter);
+    }
+
+    function startGame() {
+      karuta = shuffleArray(karuta).slice(0,5);
+      remaining = [...karuta];
+      playerScore = 0;
+      comScore = 0;
+      updateScore();
+      statusEl.textContent = "";
+      drawCards();
+      nextRound();
+    }
+
+    function shuffleArray(array) {
+      for (let i=0; i<10; i++) {
+        array.sort(() => Math.random() - 0.5);
+      }
+      return array;
+    };
+
+    function drawCards() {
+      cardsEl.innerHTML = "";
+      karuta.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "card";
+        div.textContent = item.tori;
+        div.onclick = () => selectCard(item, div);
+        cardsEl.appendChild(div);
+      });
+    }
+
+    function nextRound() {
+      if (remaining.length === 0) {
+        yomiEl.textContent = "ゲーム終了！";
+        if (playerScore > comScore) statusEl.textContent = "あなたの勝ち 🎉";
+        else if (playerScore < comScore) statusEl.textContent = "COMの勝ち 😈";
+        else statusEl.textContent = "引き分け 🤝";
+        return;
+      }
+
+      const index = Math.floor(Math.random() * remaining.length);
+      current = remaining[index];
+
+      const yomiIndex = Math.floor(Math.random() * current.yomi.length);
+      const yomiObj = current.yomi[yomiIndex];
+      
+      yomiEl.textContent = yomiObj.text;
+      speak(yomiObj.speak);
+
+      const comDelay = 3000 + Math.random() * 300 * yomiObj.text.length;
+      clearTimeout(comTimer);
+      comTimer = setTimeout(comTake, comDelay);
+    }
+
+    function selectCard(item, element) {
+      if (item !== current) {
+        statusEl.textContent = "ちがいます";
+        setTimeout(() => statusEl.textContent = "", 500);
+        return;
+      }
+      if (element.classList.contains("player") || element.classList.contains("com")) return;
+
+      clearTimeout(comTimer);
+      element.classList.add("player");
+      playerScore++;
+      statusEl.textContent = "あなたが取りました！";
+      endRound();
+    }
+
+    function comTake() {
+      const cards = document.querySelectorAll('.card');
+      cards.forEach(card => {
+        if (card.textContent === current.tori) {
+          card.classList.add('com');
+        }
+      });
+      comScore++;
+      statusEl.textContent = "COMが取りました";
+      endRound();
+    }
+
+    function endRound() {
+      updateScore();
+      remaining = remaining.filter(k => k !== current);
+      setTimeout(() => {
+        statusEl.textContent = "";
+        nextRound();
+      }, 900);
+    }
+
+    function updateScore() {
+      playerScoreEl.textContent = playerScore;
+      comScoreEl.textContent = comScore;
+    }
+  </script>
+</body>
+</html>
